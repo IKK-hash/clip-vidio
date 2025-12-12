@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<title>Video Multi-Clip + Trim</title>
+<title>Video Multi-Clip</title>
 <style>
     body { font-family: Arial; padding: 20px; background: #f5f5f5; }
     .clip-row { display: flex; gap: 10px; margin-top: 10px; }
@@ -11,49 +11,32 @@
     button { padding: 10px 15px; margin-top: 10px; cursor: pointer; }
     video { width: 100%; margin-top: 10px; border-radius: 10px; }
     .box { background: white; padding: 15px; border-radius: 10px; margin-top: 15px; }
-    .block { background:white;padding:15px;border-radius:10px;margin-top:20px; }
 </style>
 </head>
 <body>
 
-<h2>Video Multi-Clip + Trim (FFmpeg.wasm)</h2>
+<h2>Video Multi-Clip (FFmpeg.wasm)</h2>
 
 <label>Upload Video:</label>
 <input type="file" id="videoFile" accept="video/*"><br><br>
 
-<!-- Fitur TRIM VIDEO -->
-<div class="block">
-    <h3>Trim Video (Start – End)</h3>
-    <input id="trimStart" placeholder="Start (detik)" style="width:120px;padding:6px;">
-    <input id="trimEnd" placeholder="End (detik)" style="width:120px;padding:6px;">
-    <button id="trimBtn">Potong Video</button>
-</div>
+<button id="addClipBtn">+ Tambah Clip</button>
+<button id="processBtn">Process</button>
 
-<!-- Fitur MULTI CLIP -->
-<div class="block">
-    <h3>Multi Clip</h3>
-    <button id="addClipBtn">+ Tambah Clip</button>
-    <button id="processBtn">Process Semua Clip</button>
-    <div id="clipContainer"></div>
-</div>
+<div id="clipContainer"></div>
 
 <h3>Hasil:</h3>
 <div id="results"></div>
 
 <script type="module">
-import { createFFmpeg, fetchFile } from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.esm.js";
+import { createFFmpeg, fetchFile } from "https://unpkg.com/@ffmpeg/ffmpeg@0.11.8/dist/ffmpeg.min.js";
 
 const ffmpeg = createFFmpeg({ log: true });
 let loaded = false;
 
-async function loadFFmpeg() {
-    if (!loaded) {
-        await ffmpeg.load();
-        loaded = true;
-    }
-}
+// Tambah form clip
+document.getElementById("addClipBtn").addEventListener("click", addClipRow);
 
-// --- MULTI CLIP ---
 function addClipRow() {
     const div = document.createElement("div");
     div.className = "clip-row";
@@ -66,16 +49,18 @@ function addClipRow() {
     document.getElementById("clipContainer").appendChild(div);
 }
 
-// Buat default 1 clip
+// Buat default satu clip
 addClipRow();
-
-document.getElementById("addClipBtn").addEventListener("click", addClipRow);
 
 document.getElementById("processBtn").addEventListener("click", async () => {
     const file = document.getElementById("videoFile").files[0];
     if (!file) return alert("Upload video dulu");
 
-    await loadFFmpeg();
+    if (!loaded) {
+        await ffmpeg.load();
+        loaded = true;
+    }
+
     ffmpeg.FS("writeFile", "input.mp4", await fetchFile(file));
 
     const clips = document.querySelectorAll(".clip-row");
@@ -83,13 +68,12 @@ document.getElementById("processBtn").addEventListener("click", async () => {
     resultBox.innerHTML = "";
 
     let index = 1;
-
     for (let row of clips) {
         const start = row.querySelector(".start").value;
         const end = row.querySelector(".end").value;
 
         if (start === "" || end === "" || Number(end) <= Number(start)) {
-            alert("Isi waktu Start/End dengan benar");
+            alert("Isi waktu start/end dengan benar");
             continue;
         }
 
@@ -120,47 +104,6 @@ document.getElementById("processBtn").addEventListener("click", async () => {
 
         index++;
     }
-});
-
-// --- FITUR TRIM START–END ---
-document.getElementById("trimBtn").addEventListener("click", async () => {
-    const file = document.getElementById("videoFile").files[0];
-    if (!file) return alert("Upload video dulu");
-
-    const start = document.getElementById("trimStart").value;
-    const end = document.getElementById("trimEnd").value;
-
-    if (start === "" || end === "" || Number(end) <= Number(start)) {
-        return alert("Waktu Trim salah!");
-    }
-
-    await loadFFmpeg();
-    ffmpeg.FS("writeFile", "input_trim.mp4", await fetchFile(file));
-
-    const outFile = "trim_output.mp4";
-
-    await ffmpeg.run(
-        "-i", "input_trim.mp4",
-        "-ss", start,
-        "-to", end,
-        "-c", "copy",
-        outFile
-    );
-
-    const data = ffmpeg.FS("readFile", outFile);
-    const url = URL.createObjectURL(new Blob([data.buffer], { type: "video/mp4" }));
-
-    const box = document.createElement("div");
-    box.className = "box";
-    box.innerHTML = `
-        <b>Hasil Trim</b><br>
-        Start: ${start}s | End: ${end}s<br>
-        <video controls src="${url}"></video><br>
-        <a download="${outFile}" href="${url}">
-            <button>Download Trim</button>
-        </a>
-    `;
-    document.getElementById("results").appendChild(box);
 });
 </script>
 
