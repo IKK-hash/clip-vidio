@@ -1,267 +1,153 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Multi Clip with FFmpeg.wasm</title>
+<meta charset="UTF-8">
+<title>Video Multi-Clip + Merge</title>
 <style>
-  :root{--accent:#1e88e5;--bg:#f6f9fb}
-  body{font-family:system-ui,Segoe UI,Roboto,Arial; background:var(--bg); margin:0;padding:18px;color:#0a2540}
-  .wrap{max-width:980px;margin:0 auto;background:#fff;padding:18px;border-radius:12px;box-shadow:0 8px 30px rgba(10,30,60,0.06)}
-  h1{margin:0 0 8px;font-size:20px}
-  label{display:block;margin-top:10px;font-size:14px}
-  input[type="file"], input[type="text"], input[type="number"]{width:100%;padding:8px;border-radius:8px;border:1px solid #ddd}
-  .row{display:flex;gap:10px}
-  .row > *{flex:1}
-  button{margin-top:10px;padding:8px 12px;border-radius:8px;border:0;background:var(--accent);color:#fff;cursor:pointer}
-  button:disabled{opacity:.6;cursor:default}
-  .clip-row{display:flex;gap:8px;margin-top:8px}
-  .clip-row input{flex:1;padding:6px;border-radius:6px;border:1px solid #ddd}
-  .clip-row button{background:#d32f2f}
-  .result{margin-top:16px}
-  .preview{margin-top:12px;padding:10px;border-radius:10px;background:#f3f7fb}
-  .progress{height:10px;background:#e6eefb;border-radius:6px;overflow:hidden;margin-top:8px}
-  .progress > i{display:block;height:100%;background:linear-gradient(90deg,#1e88e5,#5cc8ff);width:0%}
-  small{color:#666}
+    body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+    .clip-row { display: flex; gap: 10px; margin-top: 10px; }
+    .clip-row input { padding: 6px; width: 100%; }
+    .clip-row button { background: red; color: white; border: 0; padding: 6px 10px; }
+    button { padding: 10px 15px; margin-top: 10px; cursor: pointer; }
+    video { width: 100%; margin-top: 10px; border-radius: 10px; }
+    .box { background: white; padding: 15px; border-radius: 10px; margin-top: 15px; }
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Multi Clip (FFmpeg.wasm)</h1>
-    <p style="margin:0">Upload video lokal → masukkan beberapa rentang → klik <strong>Process</strong>. Hasil akan muncul sebagai preview + download.</p>
 
-    <label>File video (lokal)</label>
-    <input id="fileInput" type="file" accept="video/*">
+<h2>Video Multi-Clip + Merge (FFmpeg.wasm)</h2>
 
-    <label>Atau (opsional) URL video (CORS harus diizinkan untuk ffmpeg.read dari URL)</label>
-    <input id="urlInput" type="text" placeholder="https://... (opsional)">
+<label>Upload Video:</label>
+<input type="file" id="videoFile" accept="video/*"><br><br>
 
-    <div style="display:flex;gap:10px;margin-top:10px;align-items:center">
-      <label style="margin:0"><input id="reencode" type="checkbox"> Re-encode (lebih akurat, lebih lambat)</label>
-      <button id="addBtn" type="button">+ Tambah Clip</button>
-      <button id="processBtn" type="button">Process</button>
-    </div>
+<button id="addClipBtn">+ Tambah Clip</button>
+<button id="processBtn">Process Clip</button>
+<button id="mergeBtn">Gabungkan Semua Clip</button>
 
-    <div id="clips" style="margin-top:10px"></div>
+<div id="clipContainer"></div>
 
-    <div style="margin-top:12px">
-      <small>Waktu bisa diisi dalam detik (contoh: 10.5) atau format hh:mm:ss</small>
-    </div>
+<h3>Hasil Clip:</h3>
+<div id="results"></div>
 
-    <div id="status" style="margin-top:12px"></div>
-    <div class="progress" style="display:none"><i></i></div>
-
-    <div id="result" class="result"></div>
-  </div>
+<h3>Hasil Merge:</h3>
+<div id="mergeResult"></div>
 
 <script type="module">
-import { createFFmpeg, fetchFile } from 'https://unpkg.com/@ffmpeg/ffmpeg@0.11.8/dist/ffmpeg.min.js';
+import { createFFmpeg, fetchFile } from "https://unpkg.com/@ffmpeg/ffmpeg@0.11.8/dist/ffmpeg.min.js";
 
 const ffmpeg = createFFmpeg({ log: true });
-const fileInput = document.getElementById('fileInput');
-const urlInput = document.getElementById('urlInput');
-const addBtn = document.getElementById('addBtn');
-const processBtn = document.getElementById('processBtn');
-const clipsDiv = document.getElementById('clips');
-const statusEl = document.getElementById('status');
-const resultEl = document.getElementById('result');
-const progressBar = document.querySelector('.progress');
-const progressFill = document.querySelector('.progress > i');
-const reencodeCheckbox = document.getElementById('reencode');
+let loaded = false;
+let clipOutputNames = [];
 
-let loadedFile = null;
-let inputFilename = null;
+document.getElementById("addClipBtn").addEventListener("click", addClipRow);
 
-// Utility parse time string
-function parseTime(s){
-  if (s==null || s==='') return 0;
-  s = String(s).trim();
-  if (!isNaN(Number(s))) return Number(s);
-  if (s.includes(':')) {
-    const parts = s.split(':').map(Number).reverse();
-    let sec = 0;
-    for (let i=0;i<parts.length;i++) sec += parts[i]*Math.pow(60,i);
-    return sec;
-  }
-  const n = Number(s);
-  return isNaN(n)?0:n;
+function addClipRow() {
+    const div = document.createElement("div");
+    div.className = "clip-row";
+    div.innerHTML = `
+        <input class="start" placeholder="Start (detik)">
+        <input class="end" placeholder="End (detik)">
+        <button class="remove">X</button>
+    `;
+    div.querySelector(".remove").onclick = () => div.remove();
+    document.getElementById("clipContainer").appendChild(div);
 }
 
-addBtn.addEventListener('click', ()=> {
-  const idx = clipsDiv.children.length+1;
-  const row = document.createElement('div');
-  row.className = 'clip-row';
-  row.innerHTML = `
-    <input class="start" placeholder="Start (detik atau hh:mm:ss)">
-    <input class="end" placeholder="End (detik atau hh:mm:ss)">
-    <button type="button" class="remove">X</button>
-  `;
-  row.querySelector('.remove').addEventListener('click', ()=> row.remove());
-  clipsDiv.appendChild(row);
-});
+// buat 1 baris clip default
+addClipRow();
 
-// allow initial one
-addBtn.click();
+document.getElementById("processBtn").addEventListener("click", async () => {
+    const file = document.getElementById("videoFile").files[0];
+    if (!file) return alert("Upload video dulu");
 
-fileInput.addEventListener('change', (e) => {
-  const f = e.target.files[0];
-  if (!f) return;
-  loadedFile = f;
-  inputFilename = 'input' + (f.name.endsWith('.mp4') ? '.mp4' : '') || 'input.mp4';
-  statusEl.innerText = `File dipilih: ${f.name}`;
-});
-
-async function ensureFFmpegLoaded(){
-  if (!ffmpeg.isLoaded()) {
-    statusEl.innerText = 'Memuat FFmpeg (sekali saja, tunggu)...';
-    progressBar.style.display = 'block';
-    progressFill.style.width = '5%';
-    await ffmpeg.load();
-    progressFill.style.width = '8%';
-    statusEl.innerText = 'FFmpeg siap.';
-    progressBar.style.display = 'none';
-  }
-}
-
-// function to update progress from ffmpeg logs (approx)
-function handleLog(msg){
-  // msg like: "frame=  181 fps=0.0 q=28.0 size=     256kB time=00:00:07.24 bitrate= 289.6kbits/s speed=14.2x"
-  const m = /time=(\d{2}:\d{2}:\d{2}\.\d{2}|\d{2}:\d{2}:\d{2})/.exec(msg);
-  if (m) {
-    // we don't have total duration easily from log; skip
-  }
-}
-
-processBtn.addEventListener('click', async () => {
-  try {
-    resultEl.innerHTML = '';
-    statusEl.innerText = '';
-    progressBar.style.display = 'none';
-    progressFill.style.width = '0%';
-
-    // gather ranges
-    const rows = [...clipsDiv.querySelectorAll('.clip-row')];
-    if (rows.length === 0) return alert('Tambahkan minimal 1 clip');
-    const ranges = rows.map(r => ({
-      startRaw: r.querySelector('.start').value,
-      endRaw: r.querySelector('.end').value,
-      start: parseTime(r.querySelector('.start').value),
-      end: parseTime(r.querySelector('.end').value),
-    })).filter(r => r.end > r.start);
-
-    if (ranges.length === 0) return alert('Isi rentang start/end yang valid (end > start)');
-
-    // load ffmpeg
-    await ensureFFmpegLoaded();
-
-    // prepare input source
-    // prefer local file. If URL provided and no local file, fetch and write to FS
-    if (loadedFile) {
-      inputFilename = loadedFile.name || 'input.mp4';
-      statusEl.innerText = `Menulis file ke FFmpeg FS (${inputFilename})...`;
-      // write file
-      ffmpeg.FS('writeFile', inputFilename, await fetchFile(loadedFile));
-    } else if (urlInput.value.trim()) {
-      // fetch url
-      statusEl.innerText = 'Mengunduh file dari URL (pastikan CORS diizinkan)...';
-      const url = urlInput.value.trim();
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error('Gagal mengunduh file dari URL: ' + resp.status);
-      const buf = await resp.arrayBuffer();
-      inputFilename = 'input' + (url.split('.').pop().includes('mp4') ? '.mp4' : '');
-      ffmpeg.FS('writeFile', inputFilename, new Uint8Array(buf));
-      statusEl.innerText = 'File diunduh dan ditulis ke FFmpeg.';
-    } else {
-      return alert('Pilih file lokal atau masukkan URL video.');
+    if (!loaded) {
+        await ffmpeg.load();
+        loaded = true;
     }
 
-    // Try to read duration via ffprobe? Simpler: run ffmpeg -i and parse stderr
-    let totalSteps = ranges.length;
-    for (let i=0;i<ranges.length;i++){
-      const r = ranges[i];
-      statusEl.innerText = `Memproses clip ${i+1}/${ranges.length} — ${r.startRaw} → ${r.endRaw}`;
-      progressBar.style.display = 'block';
-      progressFill.style.width = `${Math.round((i/totalSteps)*100)}%`;
+    ffmpeg.FS("writeFile", "input.mp4", await fetchFile(file));
 
-      // name output
-      const outName = `clip_${i+1}_${Math.max(0,Math.floor(r.start))}-${Math.max(0,Math.floor(r.end))}.mp4`;
+    const clips = document.querySelectorAll(".clip-row");
+    const resultBox = document.getElementById("results");
+    resultBox.innerHTML = "";
+    clipOutputNames = [];
 
-      // Build ffmpeg args
-      // We use: -ss START -to END -i input -c copy out   (fast copy)
-      // If Re-encode option checked, we will instead re-encode for higher accuracy: -ss START -to END -i input -c:v libx264 -c:a aac -preset veryfast out
-      // Note: libx264 may or may not be enabled in the wasm build — if it errors, user can uncheck reencode.
-      const reencode = reencodeCheckbox.checked;
-      let args;
-      if (!reencode) {
-        // use input then -ss -to after -i to ensure accuracy with copy (this is usually accurate)
-        // Use: -i input -ss START -to END -c copy out
-        args = ['-i', inputFilename, '-ss', String(r.start), '-to', String(r.end), '-c', 'copy', outName];
-      } else {
-        args = ['-i', inputFilename, '-ss', String(r.start), '-to', String(r.end), '-c:v', 'libx264', '-c:a', 'aac', '-preset', 'veryfast', outName];
-      }
+    let index = 1;
+    for (let row of clips) {
+        const start = row.querySelector(".start").value;
+        const end = row.querySelector(".end").value;
 
-      // run ffmpeg
-      // attach logger to show progress simple
-      ffmpeg.setLogger(({ type, message }) => {
-        // show last log lines
-        statusEl.innerText = `Memproses clip ${i+1}/${ranges.length}: ${message}`;
-        // optional: parse "time=" to update internal progress — hard without total duration; skip fine-grained
-      });
+        if (start === "" || end === "" || Number(end) <= Number(start)) {
+            alert("Isi waktu start/end dengan benar");
+            continue;
+        }
 
-      await ffmpeg.run(...args);
+        const outFile = `clip_${index}.mp4`;
 
-      // read output
-      const data = ffmpeg.FS('readFile', outName);
-      const blob = new Blob([data.buffer], { type: 'video/mp4' });
-      const url = URL.createObjectURL(blob);
+        await ffmpeg.run(
+            "-i", "input.mp4",
+            "-ss", start,
+            "-to", end,
+            "-c", "copy",
+            outFile
+        );
 
-      // create preview element
-      const box = document.createElement('div');
-      box.className = 'preview';
+        clipOutputNames.push(outFile);
 
-      const title = document.createElement('div');
-      title.innerHTML = `<strong>Clip ${i+1}</strong> — ${r.startRaw} → ${r.endRaw} (${outName})`;
-      box.appendChild(title);
+        const data = ffmpeg.FS("readFile", outFile);
+        const url = URL.createObjectURL(new Blob([data.buffer], { type: "video/mp4" }));
 
-      const vid = document.createElement('video');
-      vid.src = url;
-      vid.controls = true;
-      vid.style.width = '100%';
-      vid.style.marginTop = '8px';
-      box.appendChild(vid);
+        const box = document.createElement("div");
+        box.className = "box";
+        box.innerHTML = `
+            <b>Clip ${index}</b><br>
+            Start: ${start}s | End: ${end}s<br>
+            <video controls src="${url}"></video><br>
+            <a download="${outFile}" href="${url}">
+                <button>Download Clip</button>
+            </a>
+        `;
+        resultBox.appendChild(box);
 
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = outName;
-      a.innerText = 'Download';
-      a.style.display = 'inline-block';
-      a.style.marginTop = '8px';
-      a.style.padding = '8px 12px';
-      a.style.background = '#10a000';
-      a.style.color = 'white';
-      a.style.borderRadius = '8px';
-      box.appendChild(a);
+        index++;
+    }
+});
 
-      resultEl.appendChild(box);
-
-      // cleanup fs file to save memory
-      try { ffmpeg.FS('unlink', outName); } catch(e){/*ignore*/}
-
-      progressFill.style.width = `${Math.round(((i+1)/totalSteps)*100)}%`;
+// ======== MERGE ALL CLIPS ========
+document.getElementById("mergeBtn").addEventListener("click", async () => {
+    if (clipOutputNames.length === 0) {
+        return alert("Belum ada clip untuk digabungkan.");
     }
 
-    statusEl.innerText = 'Selesai: semua clip siap di bawah.';
-    progressBar.style.display = 'none';
+    const mergeBox = document.getElementById("mergeResult");
+    mergeBox.innerHTML = "Sedang menggabungkan... mohon tunggu...";
 
-    // optional: remove input file from FS to free memory
-    try { ffmpeg.FS('unlink', inputFilename); } catch(e){/*ignore*/}
+    // Buat file list untuk ffmpeg concat
+    let listContent = clipOutputNames.map(n => `file '${n}'`).join("\n");
+    ffmpeg.FS("writeFile", "list.txt", listContent);
 
-  } catch (err) {
-    console.error(err);
-    statusEl.innerText = 'Error: ' + (err && err.message ? err.message : String(err));
-    progressBar.style.display = 'none';
-  }
+    await ffmpeg.run(
+        "-f", "concat",
+        "-safe", "0",
+        "-i", "list.txt",
+        "-c", "copy",
+        "merged.mp4"
+    );
+
+    const mergedData = ffmpeg.FS("readFile", "merged.mp4");
+    const mergedURL = URL.createObjectURL(
+        new Blob([mergedData.buffer], { type: "video/mp4" })
+    );
+
+    mergeBox.innerHTML = `
+        <b>Video Final (Merged):</b><br>
+        <video controls src="${mergedURL}"></video><br>
+        <a download="merged.mp4" href="${mergedURL}">
+            <button>Download Video Gabungan</button>
+        </a>
+    `;
 });
 </script>
+
 </body>
 </html>
