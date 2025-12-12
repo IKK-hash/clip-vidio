@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Multi Clip Video Cutter</title>
+<title>Multi Video Clipper</title>
 
 <style>
 body{font-family:Arial;margin:0;padding:20px;background:#f4f4f4;}
@@ -14,8 +14,7 @@ button:disabled{background:#888;}
 .clip-row{display:flex;gap:10px;margin-top:10px;}
 .clip-row input{flex:1;}
 .result-box{margin-top:20px;padding:10px;background:#f8f8f8;border-radius:10px;}
-.video-preview{margin-top:15px;}
-.download-link{display:block;margin-top:5px;padding:8px;background:#10a000;color:white;border-radius:5px;text-decoration:none;width:200px;text-align:center;}
+.download-link{display:block;margin-top:8px;padding:8px;background:#10a000;color:white;border-radius:5px;text-decoration:none;}
 </style>
 </head>
 <body>
@@ -67,7 +66,7 @@ function addClip(){
     row.innerHTML = `
         <input placeholder="Start (detik)" class="start">
         <input placeholder="End (detik)" class="end">
-        <button onclick="this.parentElement.remove()">X</button>
+        <button onclick="this.parentElement.remove()">Hapus</button>
     `;
     document.getElementById("clips").appendChild(row);
 }
@@ -134,7 +133,7 @@ document.getElementById("processBtn").addEventListener("click", async()=>{
         };
     });
 
-    if(ranges.length === 0) return alert("Tambahkan minimal 1 waktu clip");
+    if(ranges.length === 0) return alert("Tambahkan minimal 1 rentang waktu");
 
     document.getElementById("status").innerText = "Memulai proses...";
 
@@ -153,26 +152,15 @@ document.getElementById("processBtn").addEventListener("click", async()=>{
         const blob = await clipSegment(start,end);
         const url = URL.createObjectURL(blob);
 
-        // BUAT PREVIEW VIDEO
-        const vid = document.createElement("video");
-        vid.src = url;
-        vid.controls = true;
-        vid.className = "video-preview";
-
         const a = document.createElement("a");
         a.href = url;
         a.download = `clip_${start}-${end}.webm`;
         a.className = "download-link";
-        a.innerText = `Download Clip ${start}-${end}`;
-
-        const box = document.createElement("div");
-        box.appendChild(vid);
-        box.appendChild(a);
-
-        resultBox.appendChild(box);
+        a.innerText = `Download Clip ${start} - ${end} detik`;
+        resultBox.appendChild(a);
     }
 
-    document.getElementById("status").innerText = "Selesai! Semua clip muncul di bawah.";
+    document.getElementById("status").innerText = "Selesai! Semua clip siap di-download.";
 });
 </script>
 
